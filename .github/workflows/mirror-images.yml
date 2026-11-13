@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   mirror:
-    name: Mirror Node.js and Python Images
+    name: Mirror Base Images
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
 
     steps:
       - name: Check Docker
@@ -25,17 +25,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -z "$TCR_USERNAME" || -z "$TCR_PASSWORD" ]]; then
-            echo "::error::TCR_USERNAME or TCR_PASSWORD is missing."
-            exit 1
-          fi
+          test -n "$TCR_USERNAME"
+          test -n "$TCR_PASSWORD"
 
           printf '%s' "$TCR_PASSWORD" | docker login \
             ccr.ccs.tencentyun.com \
             --username "$TCR_USERNAME" \
             --password-stdin
 
-      - name: Mirror Node.js 20
+      - name: Mirror Node.js 20 (Skip if exists)
         shell: bash
         run: |
           set -euo pipefail
@@ -43,11 +41,18 @@ jobs:
           SOURCE="node:20-bookworm-slim"
           TARGET="ccr.ccs.tencentyun.com/gaiya/node20-bookworm-slim:20-bookworm-slim"
 
-          docker pull "$SOURCE"
-          docker tag "$SOURCE" "$TARGET"
-          docker push "$TARGET"
+          if docker manifest inspect "$TARGET" >/dev/null 2>&1; then
+            echo "SKIP: Node.js 20 already exists in TCR."
+          else
+            echo "Node.js 20 not found. Starting upload."
+            docker pull "$SOURCE"
+            docker tag "$SOURCE" "$TARGET"
+            docker push "$TARGET"
+            docker manifest inspect "$TARGET" >/dev/null
+            echo "Node.js 20 upload verified."
+          fi
 
-      - name: Mirror Python 3.11
+      - name: Mirror Python 3.11 (Skip if exists)
         shell: bash
         run: |
           set -euo pipefail
@@ -55,19 +60,31 @@ jobs:
           SOURCE="python:3.11-slim-bookworm"
           TARGET="ccr.ccs.tencentyun.com/gaiya/python311-slim-bookworm:3.11-slim-bookworm"
 
-          docker pull "$SOURCE"
-          docker tag "$SOURCE" "$TARGET"
-          docker push "$TARGET"
+          if docker manifest inspect "$TARGET" >/dev/null 2>&1; then
+            echo "SKIP: Python 3.11 already exists in TCR."
+          else
+            echo "Python 3.11 not found. Starting upload."
+            docker pull "$SOURCE"
+            docker tag "$SOURCE" "$TARGET"
+            docker push "$TARGET"
+            docker manifest inspect "$TARGET" >/dev/null
+            echo "Python 3.11 upload verified."
+          fi
 
-      - name: Verify TCR Images
+      - name: Verify Both Images
         shell: bash
         run: |
           set -euo pipefail
 
-          docker pull ccr.ccs.tencentyun.com/gaiya/node20-bookworm-slim:20-bookworm-slim
-          docker pull ccr.ccs.tencentyun.com/gaiya/python311-slim-bookworm:3.11-slim-bookworm
+          docker manifest inspect \
+            ccr.ccs.tencentyun.com/gaiya/node20-bookworm-slim:20-bookworm-slim \
+            >/dev/null
 
-          echo "Both TCR images are available."
+          docker manifest inspect \
+            ccr.ccs.tencentyun.com/gaiya/python311-slim-bookworm:3.11-slim-bookworm \
+            >/dev/null
+
+          echo "SUCCESS: Both images exist in Tencent TCR."
 
       - name: Logout TCR
         if: always()
