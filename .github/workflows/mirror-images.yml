@@ -1,0 +1,74 @@
+
+name: Mirror Base Images to Tencent TCR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Mirror Node.js and Python Images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check Docker
+        run: docker version
+
+      - name: Login to Tencent TCR Personal
+        shell: bash
+        env:
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$TCR_USERNAME" || -z "$TCR_PASSWORD" ]]; then
+            echo "::error::TCR_USERNAME or TCR_PASSWORD is missing."
+            exit 1
+          fi
+
+          printf '%s' "$TCR_PASSWORD" | docker login \
+            ccr.ccs.tencentyun.com \
+            --username "$TCR_USERNAME" \
+            --password-stdin
+
+      - name: Mirror Node.js 20
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SOURCE="node:20-bookworm-slim"
+          TARGET="ccr.ccs.tencentyun.com/gaiya/node20-bookworm-slim:20-bookworm-slim"
+
+          docker pull "$SOURCE"
+          docker tag "$SOURCE" "$TARGET"
+          docker push "$TARGET"
+
+      - name: Mirror Python 3.11
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SOURCE="python:3.11-slim-bookworm"
+          TARGET="ccr.ccs.tencentyun.com/gaiya/python311-slim-bookworm:3.11-slim-bookworm"
+
+          docker pull "$SOURCE"
+          docker tag "$SOURCE" "$TARGET"
+          docker push "$TARGET"
+
+      - name: Verify TCR Images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull ccr.ccs.tencentyun.com/gaiya/node20-bookworm-slim:20-bookworm-slim
+          docker pull ccr.ccs.tencentyun.com/gaiya/python311-slim-bookworm:3.11-slim-bookworm
+
+          echo "Both TCR images are available."
+
+      - name: Logout TCR
+        if: always()
+        run: docker logout ccr.ccs.tencentyun.com || true
